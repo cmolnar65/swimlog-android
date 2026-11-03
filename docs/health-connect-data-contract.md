@@ -53,7 +53,7 @@ Each `workouts[]` item has:
 | `activity_type` | Yes | One of `swimming_pool`, `swimming_open_water`, `running`, `running_treadmill`, `walking`. |
 | `start_time_utc`, `end_time_utc` | Yes | ISO-8601 UTC instants with `Z`; end must be after start. |
 | `start_offset_seconds`, `end_offset_seconds` | No | Health Connect offsets, when supplied. Do not manufacture an offset. |
-| `calendar_date` | Yes | Source-local date when a valid offset exists; otherwise the owner's configured Swim Log timezone date. |
+| `calendar_date` | Yes (nullable) | Source-local date when a valid offset exists; otherwise the owner's configured Swim Log timezone date. Null only when the date is unresolved. |
 | `date_basis` | Yes | `source_offset` or `owner_timezone`; use `unresolved` only if neither date can be established. |
 | `elapsed_time_ms` | Yes | End instant minus start instant. This is elapsed time, not moving time. |
 | `distance_value`, `distance_unit` | Yes | Source distance and explicit unit, matched from a distance record of the same origin and unambiguous session interval. |
@@ -93,7 +93,7 @@ Each `measurements[]` item has:
 | `source_record_type` | Yes | `BloodPressureRecord`, `WeightRecord`, `BodyFatRecord`, or `LeanBodyMassRecord`. |
 | `observed_at_utc` | Yes | Measurement instant as ISO-8601 UTC. |
 | `source_offset_seconds` | No | Verified source offset, if present. |
-| `calendar_date` | Yes | Source-local date when offset is present; otherwise owner's configured Swim Log timezone date. |
+| `calendar_date` | Yes (nullable) | Source-local date when offset is present; otherwise owner's configured Swim Log timezone date. Null only when the date is unresolved. |
 | `date_basis` | Yes | `source_offset`, `owner_timezone`, or `unresolved`. |
 | `category` | Yes | `blood_pressure`, `weight`, or `body_composition`. |
 | `values` | Yes | Typed values and explicit normalized units below. |
