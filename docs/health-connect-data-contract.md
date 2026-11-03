@@ -13,7 +13,7 @@
 
 A periodic background sync requires the user to grant Health Connect's separate `READ_HEALTH_DATA_IN_BACKGROUND` permission in addition to each requested data-type read permission. Check that the feature is available and permission remains granted. If unavailable or denied, sync while the app is in the foreground and explain the limitation; do not promise hourly background imports. Android may defer scheduled work.
 
-Health Connect permits reads only within its default history window (30 days). Request `READ_HEALTH_DATA_HISTORY` only after the user explicitly chooses older history and only if supported. Ask separately before sending older records to Swim Log.
+By default, Health Connect permits reads only for records from up to 30 days before the user first grants a data-type permission. Request `READ_HEALTH_DATA_HISTORY` only after the user explicitly chooses older history and only if supported. Ask separately before sending older records to Swim Log.
 
 ## WordPress receiver
 
