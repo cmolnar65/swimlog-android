@@ -1,6 +1,6 @@
 # Health Connect import data contract
 
-**Status:** Contract for the Android app and the WordPress `develop` receiver, version 1. This is a cross-project integration contract; it does not mean an Android app implementation or end-to-end test build exists.
+**Status:** Version 1 contract implemented by the Android test client and the WordPress `develop` receiver. End-to-end real-device acceptance remains pending.
 
 ## Flow and permissions
 
@@ -66,10 +66,17 @@ HTTP 200 returns an outcome for each record. Current outcomes include `added`, `
 
 ## Implementation prerequisites and validation status
 
-The WordPress receiver and owner-scoped token handling exist on plugin `develop`; that does not establish that an Android client has been built or tested against it. Android implementation still needs to handle Health Connect feature availability, permission revocation, background scheduling limits, bounded batching, safe retries, duplicate outcomes, and token storage.
+The WordPress receiver and owner-scoped token handling exist on plugin `develop`. The Android test client now handles Health Connect availability, permission checks, best-effort background scheduling, bounded requests, HTTPS token transport, and receiver duplicate/conflict outcomes. The client has not yet passed a real-device Health Connect test against the installed Swim Log receiver.
 
-The current `swimlog-android` repository contains documentation only; it has no Gradle project, Android source, automated tests, or Actions workflows. There is no Android build/test suite to run yet. End-to-end validation must wait for an app implementation and a safe test account with synthetic or non-sensitive records.
+The `swimlog-android` repository now contains a minimal native Android client, unit tests, a Gradle wrapper, an APK build script, and an Actions workflow that builds a debug APK artifact. The test APK is for manual installation and is not a Play Store or production release. Unit tests do not replace real-device Health Connect validation. End-to-end validation must use a safe test account with synthetic or non-sensitive records.
 
 Official Android references:
 - [Read Health Connect data, including background and history access](https://developer.android.com/health-and-fitness/health-connect/read-data)
 - [Health Connect data types and additional read permissions](https://developer.android.com/health-and-fitness/health-connect/data-types)
+
+
+## Android test client implementation notes
+
+The initial client reads a rolling 30-day window. It requests only read permissions for exercise sessions, distance, heart rate, weight, body fat, lean body mass, and blood pressure; background access is requested separately and only when Health Connect reports the feature available. The user can sync in the foreground without background access. WorkManager runs periodic sync on a best-effort six-hour interval when background permission and network are available.
+
+The debug APK is built with `./scripts/build-test-apk.sh`. That script invokes the checked-in Gradle wrapper, then copies the debug APK to the ignored `dist/` directory. GitHub Actions uploads the same test APK for seven days. Neither build path includes an app token or health records. The client stores only the owner-scoped token encrypted with Android Keystore, does not back up app data, and sends the token only to `https://cmolnar.com` over HTTPS.
