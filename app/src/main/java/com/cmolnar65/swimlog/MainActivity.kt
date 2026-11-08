@@ -35,7 +35,7 @@ class MainActivity : ComponentActivity() {
         PermissionController.createRequestPermissionResultContract()
     ) { granted ->
         status.text = if (granted.containsAll(healthPermissions)) "Health Connect read access granted." else "Some Health Connect permissions were denied. Sync will omit unavailable types."
-        if (connectAfterRead && granted.containsAll(healthPermissions)) requestBackgroundPermission()
+        if (connectAfterRead && granted.any { it in healthPermissions }) requestBackgroundPermission()
         connectAfterRead = false
         if (syncAfterPermission) runForegroundSync()
         syncAfterPermission = false
@@ -90,7 +90,7 @@ class MainActivity : ComponentActivity() {
             val client = runCatching { HealthConnectClient.getOrCreate(this@MainActivity) }.getOrNull()
             if (client == null) { status.text = "Health Connect is unavailable."; return@launch }
             val granted = client.permissionController.getGrantedPermissions()
-            if (!granted.containsAll(healthPermissions)) { status.text = "Grant the selected data read permissions first."; return@launch }
+            if (granted.none { it in healthPermissions }) { status.text = "Grant at least one selected data read permission first."; return@launch }
             val backgroundFeature = client.features.getFeatureStatus(HealthConnectFeatures.FEATURE_READ_HEALTH_DATA_IN_BACKGROUND)
             if (backgroundFeature != HealthConnectFeatures.FEATURE_STATUS_AVAILABLE) {
                 status.text = "This Health Connect version does not support background reads. Use Sync now while the app is open."
