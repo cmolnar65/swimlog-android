@@ -12,9 +12,12 @@ data class SyncSummary(val sent: Int, val added: Int, val duplicates: Int, val c
 
 class ImportClient(private val json: Json = Json { ignoreUnknownKeys = true; encodeDefaults = true; explicitNulls = false }) {
     suspend fun send(endpoint: String, token: String, batch: ImportBatch): SyncSummary {
-        require(endpoint.equals("https://cmolnar.com", ignoreCase = true)) { "Use the official https://cmolnar.com site" }
-        require(batch.workouts.size <= 50 && batch.measurements.size <= 500) { "Batch count limit exceeded" }
-        require(batch.workouts.all { it.heartRateSamples.size <= 2000 }) { "Heart-rate sample limit exceeded" }
+        if (!endpoint.equals("https://cmolnar.com", ignoreCase = true)) {
+            throw SyncRequestValidationException(SyncRequestIssue.INVALID_SITE)
+        }
+        if (batch.workouts.any { it.heartRateSamples.size > 2000 }) {
+            throw SyncRequestValidationException(SyncRequestIssue.TOO_MANY_HEART_RATE_SAMPLES)
+        }
         val requests = buildRequests(batch)
         var added = 0; var duplicates = 0; var conflicts = 0; var rejected = 0; var retryable = false
         requests.forEach { request ->
@@ -30,12 +33,14 @@ class ImportClient(private val json: Json = Json { ignoreUnknownKeys = true; enc
         return SyncSummary(batch.workouts.size + batch.measurements.size, added, duplicates, conflicts, rejected, retryable)
     }
 
-    private fun buildRequests(batch: ImportBatch): List<ImportBatch> {
+    internal fun buildRequests(batch: ImportBatch): List<ImportBatch> {
         val pieces = mutableListOf<ImportBatch>()
         batch.workouts.forEach { pieces += ImportBatch(batchId = UUID.randomUUID().toString(), workouts = listOf(it)) }
         batch.measurements.chunked(100).forEach { pieces += ImportBatch(batchId = UUID.randomUUID().toString(), measurements = it) }
         return pieces.map { piece ->
-            require(json.encodeToString(piece).toByteArray(Charsets.UTF_8).size <= 512 * 1024) { "One record exceeds receiver request limit" }
+            if (json.encodeToString(piece).toByteArray(Charsets.UTF_8).size > 512 * 1024) {
+                throw SyncRequestValidationException(SyncRequestIssue.RECORD_TOO_LARGE)
+            }
             piece
         }
     }
@@ -68,3 +73,5 @@ class ImportClient(private val json: Json = Json { ignoreUnknownKeys = true; enc
 
 class TransientImportException(message: String) : Exception(message)
 class PermanentImportException(val httpStatus: Int) : Exception("Swim Log returned HTTP $httpStatus")
+enum class SyncRequestIssue { INVALID_SITE, TOO_MANY_HEART_RATE_SAMPLES, RECORD_TOO_LARGE }
+class SyncRequestValidationException(val issue: SyncRequestIssue) : Exception()

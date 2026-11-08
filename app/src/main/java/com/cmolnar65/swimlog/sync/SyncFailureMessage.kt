@@ -13,6 +13,11 @@ internal object SyncFailureMessage {
             400, 409 -> "Swim Log rejected the import request (HTTP ${failure.httpStatus}). No conflicting records were overwritten."
             else -> "Swim Log rejected the request (HTTP ${failure.httpStatus})."
         }
+        is SyncRequestValidationException -> when (failure.issue) {
+            SyncRequestIssue.INVALID_SITE -> "The saved site is invalid. Use https://cmolnar.com."
+            SyncRequestIssue.TOO_MANY_HEART_RATE_SAMPLES -> "A workout exceeds Swim Log's 2,000 heart-rate-sample limit. No records were sent; samples were not trimmed."
+            SyncRequestIssue.RECORD_TOO_LARGE -> "A workout import exceeds Swim Log's request-size limit. No records were sent."
+        }
         is SecurityException -> "Health Connect denied a read. Recheck Swim Log's allowed data permissions."
         is SerializationException -> "The Swim Log response could not be read. Check the receiver version."
         is IllegalStateException -> "Local Health Connect or saved connection state prevented sync. Reconnect and try again."
