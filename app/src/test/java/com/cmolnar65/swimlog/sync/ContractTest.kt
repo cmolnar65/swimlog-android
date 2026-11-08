@@ -35,6 +35,7 @@ class ContractTest {
         assertTrue(encoded.contains("\"record_id\":\"hc-1\""))
         assertTrue(encoded.contains("\"weight\":{\"value\":\"72.5\",\"unit\":\"kg\"}"))
         assertFalse(encoded.contains("owner_id"))
+        assertFalse(encoded.contains("mirroredWorkoutsSuppressed"))
         assertFalse(encoded.contains("pool_length"))
         assertFalse(encoded.contains("route"))
     }
@@ -50,5 +51,43 @@ class ContractTest {
         assertFalse(ImportOutcomePolicy.shouldRetry("conflict"))
         assertFalse(ImportOutcomePolicy.shouldRetry("duplicate"))
         assertFalse(ImportOutcomePolicy.shouldRetry("rejected"))
+    }
+
+    @Test fun collapsesOnlyIdenticalMirroredWorkoutsAndPreservesConflictingCopies() {
+        val first = WorkoutImport(
+            recordId = "session-a",
+            origin = "source.a",
+            activity = "walking",
+            startTime = "2026-11-08T09:00:00-07:00",
+            endTime = "2026-11-08T09:45:00-07:00",
+        )
+        val exactMirror = first.copy(recordId = "session-b", origin = "source.b")
+        val differingDistance = first.copy(recordId = "session-c", origin = "source.c", distanceM = "3500")
+
+        val result = HealthMapper.collapseExactMirroredWorkouts(listOf(first, exactMirror, differingDistance))
+
+        assertEquals(2, result.size)
+        assertTrue(result.any { it.recordId == "session-a" })
+        assertTrue(result.any { it.recordId == "session-c" })
+    }
+
+    @Test fun mirroredWorkoutDeduplicationComparesHeartRateContentButNotSourceIds() {
+        val first = WorkoutImport(
+            recordId = "session-a",
+            origin = "source.a",
+            activity = "pool_swimming",
+            startTime = "2026-11-08T09:00:00Z",
+            endTime = "2026-11-08T09:30:00Z",
+            heartRateSamples = listOf(HeartRateSample("hr-a", "source.a", "2026-11-08T09:10:00Z", 120)),
+        )
+        val mirror = first.copy(
+            recordId = "session-b",
+            origin = "source.b",
+            heartRateSamples = listOf(HeartRateSample("hr-b", "source.b", "2026-11-08T09:10:00Z", 120)),
+        )
+
+        assertEquals(1, HealthMapper.collapseExactMirroredWorkouts(listOf(first, mirror)).size)
+        val differingHeartRate = mirror.copy(heartRateSamples = listOf(HeartRateSample("hr-c", "source.b", "2026-11-08T09:10:00Z", 121)))
+        assertEquals(2, HealthMapper.collapseExactMirroredWorkouts(listOf(first, differingHeartRate)).size)
     }
 }

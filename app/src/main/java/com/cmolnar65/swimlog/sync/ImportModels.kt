@@ -9,6 +9,7 @@ data class ImportBatch(
     @SerialName("batch_id") val batchId: String,
     val workouts: List<WorkoutImport> = emptyList(),
     val measurements: List<MeasurementImport> = emptyList(),
+    @kotlinx.serialization.Transient val mirroredWorkoutsSuppressed: Int = 0,
 )
 
 @Serializable

@@ -8,7 +8,15 @@ import java.net.URL
 import java.io.IOException
 import java.util.UUID
 
-data class SyncSummary(val sent: Int, val added: Int, val duplicates: Int, val conflicts: Int, val rejected: Int, val retryable: Boolean)
+data class SyncSummary(
+    val sent: Int,
+    val added: Int,
+    val duplicates: Int,
+    val conflicts: Int,
+    val rejected: Int,
+    val retryable: Boolean,
+    val mirroredWorkoutsSuppressed: Int = 0,
+)
 
 class ImportClient(private val json: Json = Json { ignoreUnknownKeys = true; encodeDefaults = true; explicitNulls = false }) {
     suspend fun send(endpoint: String, token: String, batch: ImportBatch): SyncSummary {
@@ -30,7 +38,7 @@ class ImportClient(private val json: Json = Json { ignoreUnknownKeys = true; enc
                 "rejected" -> rejected++
             } }
         }
-        return SyncSummary(batch.workouts.size + batch.measurements.size, added, duplicates, conflicts, rejected, retryable)
+        return SyncSummary(batch.workouts.size + batch.measurements.size, added, duplicates, conflicts, rejected, retryable, batch.mirroredWorkoutsSuppressed)
     }
 
     internal fun buildRequests(batch: ImportBatch): List<ImportBatch> {

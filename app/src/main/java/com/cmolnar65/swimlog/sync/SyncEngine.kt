@@ -12,7 +12,9 @@ class SyncEngine(private val store: SecretStore) {
         if (granted.intersect(HealthConnectPermissions.reads).isEmpty()) error("No Health Connect read permissions are granted")
         val records = HealthReader(client).readLast30Days(granted)
         val payload = HealthMapper.map(records)
-        if (payload.workouts.isEmpty() && payload.measurements.isEmpty()) return SyncSummary(0, 0, 0, 0, 0, false)
+        if (payload.workouts.isEmpty() && payload.measurements.isEmpty()) {
+            return SyncSummary(0, 0, 0, 0, 0, false, payload.mirroredWorkoutsSuppressed)
+        }
         return ImportClient().send(endpoint, token, payload)
     }
 

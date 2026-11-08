@@ -134,7 +134,8 @@ class MainActivity : ComponentActivity() {
                 val canRetryInBackground = HealthPermission.PERMISSION_READ_HEALTH_DATA_IN_BACKGROUND in client.permissionController.getGrantedPermissions()
                 if (summary.retryable && canRetryInBackground) SyncWorker.enqueueRetry(this@MainActivity)
                 val retryText = if (!summary.retryable) "" else if (canRetryInBackground) "; transient items will retry" else "; tap Sync now again to retry transient items"
-                val message = "Sync complete: ${summary.added} added, ${summary.duplicates} already present, ${summary.conflicts} conflicts, ${summary.rejected} rejected$retryText."
+                val mirrorText = if (summary.mirroredWorkoutsSuppressed == 0) "" else "; ${summary.mirroredWorkoutsSuppressed} identical mirrored workout copies skipped"
+                val message = "Sync complete: ${summary.added} added, ${summary.duplicates} already present, ${summary.conflicts} conflicts, ${summary.rejected} rejected$retryText$mirrorText."
                 status.text = message
                 SyncEngine.persistSummary(this@MainActivity, message)
             } catch (_: com.cmolnar65.swimlog.sync.TransientImportException) {

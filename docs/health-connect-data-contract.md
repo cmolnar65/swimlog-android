@@ -9,6 +9,7 @@
 - Supported workout classifications are pool swimming, open-water swimming, running, treadmill running, and walking. Cycling and unknown activities are unsupported.
 - Supported private measurements are weight, body composition (weight, body fat, lean body mass), paired blood pressure, and heart-rate samples matched to an imported workout.
 - Exact repeat reads are idempotent. Keep and flag likely cross-source duplicates. Preserve conflicts; never silently merge or replace a record.
+- Before upload, Android suppresses cross-source workout copies only when mapped activity, environment, exact start/end timestamps, distance, and heart-rate sample times/values all match. Differing copies remain separate and are not merged; the sync summary reports the number of exact mirrors skipped.
 - Do not infer an activity subtype from GPS presence or absence. Do not invent pool lengths, strokes, splits, moving time, or routes.
 
 A periodic background sync requires the user to grant Health Connect's separate `READ_HEALTH_DATA_IN_BACKGROUND` permission in addition to each requested data-type read permission. Check that the feature is available and permission remains granted. If unavailable or denied, sync while the app is in the foreground and explain the limitation; do not promise hourly background imports. Android may defer scheduled work.

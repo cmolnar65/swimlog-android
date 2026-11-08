@@ -21,7 +21,7 @@ data class HealthRecords(
 
 object HealthMapper {
     fun map(records: HealthRecords): ImportBatch {
-        val supported = records.sessions.mapNotNull { session ->
+        val mappedWorkouts = records.sessions.mapNotNull { session ->
             val mapped = activity(session.exerciseType) ?: return@mapNotNull null
             val origin = session.metadata.dataOrigin.packageName
             val matchingDistances = records.distances.filter {
@@ -72,8 +72,43 @@ object HealthMapper {
                 )))
             }
         }
-        return ImportBatch(batchId = java.util.UUID.randomUUID().toString(), workouts = supported, measurements = measurements)
+        val uniqueWorkouts = collapseExactMirroredWorkouts(mappedWorkouts)
+        return ImportBatch(
+            batchId = java.util.UUID.randomUUID().toString(),
+            workouts = uniqueWorkouts,
+            measurements = measurements,
+            mirroredWorkoutsSuppressed = mappedWorkouts.size - uniqueWorkouts.size,
+        )
     }
+
+    /** Collapse only workout copies with identical activity, interval, distance, and HR content. */
+    internal fun collapseExactMirroredWorkouts(workouts: List<WorkoutImport>): List<WorkoutImport> {
+        val canonicalByContent = linkedMapOf<WorkoutContent, WorkoutImport>()
+        workouts.forEach { workout ->
+            val content = WorkoutContent(
+                activity = workout.activity,
+                environment = workout.environment,
+                startTime = workout.startTime,
+                endTime = workout.endTime,
+                distanceM = workout.distanceM,
+                heartRate = workout.heartRateSamples.map { it.time to it.bpm }.sortedWith(compareBy({ it.first }, { it.second })),
+            )
+            val existing = canonicalByContent[content]
+            if (existing == null || compareValuesBy(workout, existing, WorkoutImport::origin, WorkoutImport::recordId) < 0) {
+                canonicalByContent[content] = workout
+            }
+        }
+        return canonicalByContent.values.toList()
+    }
+
+    private data class WorkoutContent(
+        val activity: String,
+        val environment: String?,
+        val startTime: String,
+        val endTime: String,
+        val distanceM: String?,
+        val heartRate: List<Pair<String, Int>>,
+    )
 
     internal fun activity(type: Int): Pair<String, String?>? = when (type) {
         ExerciseSessionRecord.EXERCISE_TYPE_SWIMMING_POOL -> "pool_swimming" to null
