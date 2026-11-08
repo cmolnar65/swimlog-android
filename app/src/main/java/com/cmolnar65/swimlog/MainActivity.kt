@@ -20,6 +20,7 @@ import com.cmolnar65.swimlog.security.SecretStore
 import com.cmolnar65.swimlog.sync.SyncWorker
 import com.cmolnar65.swimlog.sync.HealthConnectPermissions
 import com.cmolnar65.swimlog.sync.SyncEngine
+import com.cmolnar65.swimlog.sync.SyncFailureMessage
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.launch
 
@@ -145,8 +146,8 @@ class MainActivity : ComponentActivity() {
                 val message = if (canRetry) "Temporary connection problem; Android will retry." else "Temporary connection problem. Tap Sync now again when connected."
                 status.text = message
                 SyncEngine.persistSummary(this@MainActivity, message)
-            } catch (_: Exception) {
-                status.text = "Sync needs attention. Check Health Connect permissions, network, and saved connection."
+            } catch (failure: Exception) {
+                status.text = SyncFailureMessage.from(failure)
                 SyncEngine.persistSummary(this@MainActivity, status.text.toString())
             }
         }

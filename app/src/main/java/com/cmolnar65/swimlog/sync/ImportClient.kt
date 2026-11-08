@@ -57,7 +57,7 @@ class ImportClient(private val json: Json = Json { ignoreUnknownKeys = true; enc
                 connection.outputStream.use { it.write(body) }
                 val code = connection.responseCode
                 if (code in 500..599 || code == 429) throw TransientImportException("Temporary server error")
-                if (code !in 200..299) throw PermanentImportException("Server returned HTTP $code")
+                if (code !in 200..299) throw PermanentImportException(code)
                 val text = connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
                 json.decodeFromString<ImportResponse>(text)
             } catch (failure: IOException) {
@@ -67,4 +67,4 @@ class ImportClient(private val json: Json = Json { ignoreUnknownKeys = true; enc
 }
 
 class TransientImportException(message: String) : Exception(message)
-class PermanentImportException(message: String) : Exception(message)
+class PermanentImportException(val httpStatus: Int) : Exception("Swim Log returned HTTP $httpStatus")
