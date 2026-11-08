@@ -19,6 +19,7 @@ import androidx.work.WorkManager
 import com.cmolnar65.swimlog.security.SecretStore
 import com.cmolnar65.swimlog.sync.SyncWorker
 import com.cmolnar65.swimlog.sync.HealthConnectPermissions
+import com.cmolnar65.swimlog.sync.SyncEngine
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.launch
 
@@ -51,8 +52,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(32, 32, 32, 24) }
         status = TextView(this).apply { text = getSharedPreferences("sync_summary", MODE_PRIVATE).getString("last", "Health Connect sends selected records to your private Swim Log account.") }
-        endpoint = EditText(this).apply { hint = "Swim Log HTTPS site"; setText(secretStore.endpoint() ?: "https://cmolnar.com"); singleLine = true }
-        token = EditText(this).apply { hint = "Owner-scoped app token"; inputType = 129; singleLine = true }
+        endpoint = EditText(this).apply { hint = "Swim Log HTTPS site"; setText(secretStore.endpoint() ?: "https://cmolnar.com"); setSingleLine(true) }
+        token = EditText(this).apply { hint = "Owner-scoped app token"; inputType = 129; setSingleLine(true) }
         root.addView(TextView(this).apply { text = "Destination" })
         root.addView(endpoint, matchWidth())
         root.addView(token, matchWidth())
@@ -69,7 +70,7 @@ class MainActivity : ComponentActivity() {
 
     private fun requestReadPermissions(andBackground: Boolean) {
         lifecycleScope.launch {
-            val sdk = HealthConnectClient.getSdkStatus(this@MainActivity, HealthConnectClient.DEFAULT_PROVIDER_PACKAGE_NAME)
+            val sdk = HealthConnectClient.getSdkStatus(this@MainActivity, PROVIDER_PACKAGE)
             if (sdk != HealthConnectClient.SDK_AVAILABLE) {
                 status.text = "Health Connect is unavailable. Install or update Health Connect, then try again."
                 return@launch
@@ -113,7 +114,7 @@ class MainActivity : ComponentActivity() {
             status.text = "Save your Swim Log site and owner-scoped token first."; return
         }
         lifecycleScope.launch {
-            val sdk = HealthConnectClient.getSdkStatus(this@MainActivity, HealthConnectClient.DEFAULT_PROVIDER_PACKAGE_NAME)
+            val sdk = HealthConnectClient.getSdkStatus(this@MainActivity, PROVIDER_PACKAGE)
             if (sdk != HealthConnectClient.SDK_AVAILABLE) { status.text = "Health Connect is unavailable."; return@launch }
             val client = HealthConnectClient.getOrCreate(this@MainActivity)
             if (client.permissionController.getGrantedPermissions().none { it in healthPermissions }) {
@@ -160,4 +161,6 @@ class MainActivity : ComponentActivity() {
 
     private fun button(label: String, action: () -> Unit) = Button(this).apply { text = label; setOnClickListener { action() } }
     private fun matchWidth() = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+
+    companion object { private const val PROVIDER_PACKAGE = "com.google.android.apps.healthdata" }
 }
