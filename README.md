@@ -11,7 +11,7 @@ Install Android Studio with Android SDK Platform 36 and a Java 17 JDK. The check
 adb install -r dist/swimlog-health-connect-debug.apk
 ```
 
-The script builds the unsigned-by-user debug variant using Android's debug signing key and copies it to `dist/swimlog-health-connect-debug.apk`. It is for personal testing; it is not a Play Store or production package. `.gitignore` excludes `dist/`, local Gradle/Android files, and signing credentials. GitHub Actions also builds the debug APK and stores it as a short-lived workflow artifact for download; no token or health data is used in CI.
+The script builds the debug variant signed with the local Android debug key and copies it to `dist/swimlog-health-connect-debug.apk`. It is for personal testing; it is not a Play Store or production package. `.gitignore` excludes `dist/`, local Gradle/Android files, and signing credentials. GitHub Actions also builds the debug APK and stores it as a short-lived workflow artifact for download; no token or health data is used in CI.
 
 ## Test connection
 

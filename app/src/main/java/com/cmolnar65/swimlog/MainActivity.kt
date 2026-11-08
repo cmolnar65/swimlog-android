@@ -135,6 +135,15 @@ class MainActivity : ComponentActivity() {
                 val message = "Sync complete: ${summary.added} added, ${summary.duplicates} already present, ${summary.conflicts} conflicts, ${summary.rejected} rejected$retryText."
                 status.text = message
                 SyncEngine.persistSummary(this@MainActivity, message)
+            } catch (_: com.cmolnar65.swimlog.sync.TransientImportException) {
+                val canRetry = runCatching {
+                    HealthPermission.PERMISSION_READ_HEALTH_DATA_IN_BACKGROUND in
+                        HealthConnectClient.getOrCreate(this@MainActivity).permissionController.getGrantedPermissions()
+                }.getOrDefault(false)
+                if (canRetry) SyncWorker.enqueueRetry(this@MainActivity)
+                val message = if (canRetry) "Temporary connection problem; Android will retry." else "Temporary connection problem. Tap Sync now again when connected."
+                status.text = message
+                SyncEngine.persistSummary(this@MainActivity, message)
             } catch (_: Exception) {
                 status.text = "Sync needs attention. Check Health Connect permissions, network, and saved connection."
                 SyncEngine.persistSummary(this@MainActivity, status.text.toString())
