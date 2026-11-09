@@ -60,6 +60,7 @@ class ContractTest {
             activity = "walking",
             startTime = "2026-11-08T09:00:00-07:00",
             endTime = "2026-11-08T09:45:00-07:00",
+            distanceM = "3000",
         )
         val nearMirror = first.copy(
             recordId = "session-b",
