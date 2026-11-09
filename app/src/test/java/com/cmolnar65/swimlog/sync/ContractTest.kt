@@ -94,6 +94,28 @@ class ContractTest {
         assertEquals(1, HealthMapper.collapseMirroredWorkoutCopies(listOf(first, mirror)).size)
     }
 
+    @Test fun acceptsDistanceDifferencesUpToTenPercentButPreservesLargerDifferences() {
+        val first = WorkoutImport(
+            recordId = "session-a",
+            origin = "source.a",
+            activity = "walking",
+            startTime = "2026-11-08T09:00:00Z",
+            endTime = "2026-11-08T10:00:00Z",
+            distanceM = "5200",
+        )
+        val closeDistanceMirror = first.copy(
+            recordId = "session-b",
+            origin = "source.b",
+            startTime = "2026-11-08T09:00:20Z",
+            endTime = "2026-11-08T10:00:20Z",
+            distanceM = "4680",
+        )
+        val distantCopy = closeDistanceMirror.copy(recordId = "session-c", origin = "source.c", distanceM = "4600")
+
+        assertEquals(1, HealthMapper.collapseMirroredWorkoutCopies(listOf(first, closeDistanceMirror)).size)
+        assertEquals(2, HealthMapper.collapseMirroredWorkoutCopies(listOf(first, distantCopy)).size)
+    }
+
     @Test fun preservesSameSourceAndMateriallyDifferentOrNonOverlappingSessions() {
         val first = WorkoutImport(
             recordId = "session-a",
@@ -104,7 +126,7 @@ class ContractTest {
             distanceM = "100",
         )
         val sameOrigin = first.copy(recordId = "session-b")
-        val differentDistance = first.copy(recordId = "session-c", origin = "source.c", distanceM = "5300")
+        val differentDistance = first.copy(recordId = "session-c", origin = "source.c", distanceM = "6000")
         val nonOverlapping = first.copy(
             recordId = "session-d",
             origin = "source.d",
