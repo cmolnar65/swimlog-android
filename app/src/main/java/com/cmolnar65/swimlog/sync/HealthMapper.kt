@@ -94,11 +94,17 @@ object HealthMapper {
             val matchIndex = retained.indexOfFirst { existing -> isMirroredWorkoutCopy(existing, workout) }
             if (matchIndex < 0) {
                 retained += workout
-            } else if (compareValuesBy(workout, retained[matchIndex], WorkoutImport::origin, WorkoutImport::recordId) < 0) {
+            } else if (preferCanonical(workout, retained[matchIndex])) {
                 retained[matchIndex] = workout
             }
         }
         return retained
+    }
+
+    private fun preferCanonical(candidate: WorkoutImport, current: WorkoutImport): Boolean {
+        // Keep a mapped distance when only one source supplied one.
+        if ((candidate.distanceM != null) != (current.distanceM != null)) return candidate.distanceM != null
+        return compareValuesBy(candidate, current, WorkoutImport::origin, WorkoutImport::recordId) < 0
     }
 
     private fun isMirroredWorkoutCopy(first: WorkoutImport, second: WorkoutImport): Boolean {
@@ -117,30 +123,25 @@ object HealthMapper {
         val startDeltaMs = absMillis(Duration.between(firstStart, secondStart))
         val endDeltaMs = absMillis(Duration.between(firstEnd, secondEnd))
 
-        // For sessions with distance, allow modest source boundary rounding while
-        // requiring near-total interval overlap. For sessions with no distance,
-        // use tighter tolerances so absence of distance alone cannot merge records.
-        val startToleranceMs = if (first.distanceM == null) 5_000L else 60_000L
-        val endToleranceMs = if (first.distanceM == null) 1_000L else 60_000L
-        if (startDeltaMs > startToleranceMs || endDeltaMs > endToleranceMs) return false
-
         val overlapStart = maxOf(firstStart, secondStart)
         val overlapEnd = minOf(firstEnd, secondEnd)
         if (!overlapStart.isBefore(overlapEnd)) return false
 
-        val shorterDuration = minOf(
-            Duration.between(firstStart, firstEnd).toMillis(),
-            Duration.between(secondStart, secondEnd).toMillis(),
-        )
-        if (shorterDuration <= 0) return false
+        val firstDuration = Duration.between(firstStart, firstEnd).toMillis()
+        val secondDuration = Duration.between(secondStart, secondEnd).toMillis()
+        val shorterDuration = minOf(firstDuration, secondDuration)
+        val longerDuration = maxOf(firstDuration, secondDuration)
+        if (shorterDuration <= 0 || longerDuration <= 0) return false
         val overlapDuration = Duration.between(overlapStart, overlapEnd).toMillis()
-        return overlapDuration.toDouble() / shorterDuration.toDouble() >= 0.99
+        val overlapRatio = overlapDuration.toDouble() / shorterDuration.toDouble()
+        val durationRatio = shorterDuration.toDouble() / longerDuration.toDouble()
+        return overlapRatio >= 0.90 && durationRatio >= 0.80
     }
 
-    private fun absMillis(duration: Duration): Long = kotlin.math.abs(duration.toMillis())
-
     private fun distancesWithinTenPercent(first: String?, second: String?): Boolean {
-        if (first == null || second == null) return first == null && second == null
+        // Missing distance is unknown, not evidence that two otherwise likely
+        // overlapping sessions differ. A one-sided value wins canonical selection.
+        if (first == null || second == null) return true
         val firstValue = first.toBigDecimalOrNull() ?: return false
         val secondValue = second.toBigDecimalOrNull() ?: return false
         if (firstValue.signum() <= 0 || secondValue.signum() <= 0) return false
