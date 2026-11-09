@@ -104,7 +104,7 @@ object HealthMapper {
     private fun isMirroredWorkoutCopy(first: WorkoutImport, second: WorkoutImport): Boolean {
         if (first.origin == second.origin) return false
         if (first.activity != second.activity || first.environment != second.environment) return false
-        if (first.distanceM != second.distanceM) return false
+        if (!distancesWithinTenPercent(first.distanceM, second.distanceM)) return false
 
         val firstHeartRate = first.heartRateSamples.map { it.time to it.bpm }.sortedWith(compareBy({ it.first }, { it.second }))
         val secondHeartRate = second.heartRateSamples.map { it.time to it.bpm }.sortedWith(compareBy({ it.first }, { it.second }))
@@ -138,6 +138,17 @@ object HealthMapper {
     }
 
     private fun absMillis(duration: Duration): Long = kotlin.math.abs(duration.toMillis())
+
+    private fun distancesWithinTenPercent(first: String?, second: String?): Boolean {
+        if (first == null || second == null) return first == null && second == null
+        val firstValue = first.toBigDecimalOrNull() ?: return false
+        val secondValue = second.toBigDecimalOrNull() ?: return false
+        if (firstValue.signum() <= 0 || secondValue.signum() <= 0) return false
+        val larger = maxOf(firstValue, secondValue)
+        val difference = firstValue.subtract(secondValue).abs()
+        // Compare with the larger value so the threshold is symmetric regardless of source order.
+        return difference.multiply(BigDecimal.TEN) <= larger
+    }
 
     internal fun activity(type: Int): Pair<String, String?>? = when (type) {
         ExerciseSessionRecord.EXERCISE_TYPE_SWIMMING_POOL -> "pool_swimming" to null
