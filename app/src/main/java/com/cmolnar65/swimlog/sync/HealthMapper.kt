@@ -120,9 +120,6 @@ object HealthMapper {
         val secondStart = Instant.parse(second.startTime)
         val firstEnd = Instant.parse(first.endTime)
         val secondEnd = Instant.parse(second.endTime)
-        val startDeltaMs = absMillis(Duration.between(firstStart, secondStart))
-        val endDeltaMs = absMillis(Duration.between(firstEnd, secondEnd))
-
         val overlapStart = maxOf(firstStart, secondStart)
         val overlapEnd = minOf(firstEnd, secondEnd)
         if (!overlapStart.isBefore(overlapEnd)) return false
