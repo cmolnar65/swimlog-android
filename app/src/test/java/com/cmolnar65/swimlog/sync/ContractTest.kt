@@ -53,7 +53,7 @@ class ContractTest {
         assertFalse(ImportOutcomePolicy.shouldRetry("rejected"))
     }
 
-    @Test fun collapsesOnlyIdenticalMirroredWorkoutsAndPreservesConflictingCopies() {
+    @Test fun collapsesNearIdenticalCrossSourceIntervalsAndPreservesConflictingCopies() {
         val first = WorkoutImport(
             recordId = "session-a",
             origin = "source.a",
@@ -61,14 +61,58 @@ class ContractTest {
             startTime = "2026-11-08T09:00:00-07:00",
             endTime = "2026-11-08T09:45:00-07:00",
         )
-        val exactMirror = first.copy(recordId = "session-b", origin = "source.b")
+        val nearMirror = first.copy(
+            recordId = "session-b",
+            origin = "source.b",
+            endTime = "2026-11-08T09:45:00.260-07:00",
+        )
         val differingDistance = first.copy(recordId = "session-c", origin = "source.c", distanceM = "3500")
 
-        val result = HealthMapper.collapseExactMirroredWorkouts(listOf(first, exactMirror, differingDistance))
+        val result = HealthMapper.collapseMirroredWorkoutCopies(listOf(first, nearMirror, differingDistance))
 
         assertEquals(2, result.size)
         assertTrue(result.any { it.recordId == "session-a" })
         assertTrue(result.any { it.recordId == "session-c" })
+    }
+
+    @Test fun distanceMatchedOverlappingSessionsFromDifferentSourcesAreMirrors() {
+        val first = WorkoutImport(
+            recordId = "session-a",
+            origin = "source.a",
+            activity = "walking",
+            startTime = "2026-11-08T09:00:00Z",
+            endTime = "2026-11-08T10:00:00Z",
+            distanceM = "5200",
+        )
+        val mirror = first.copy(
+            recordId = "session-b",
+            origin = "source.b",
+            startTime = "2026-11-08T09:00:20Z",
+            endTime = "2026-11-08T10:00:20Z",
+        )
+
+        assertEquals(1, HealthMapper.collapseMirroredWorkoutCopies(listOf(first, mirror)).size)
+    }
+
+    @Test fun preservesSameSourceAndMateriallyDifferentOrNonOverlappingSessions() {
+        val first = WorkoutImport(
+            recordId = "session-a",
+            origin = "source.a",
+            activity = "walking",
+            startTime = "2026-11-08T09:00:00Z",
+            endTime = "2026-11-08T09:00:20Z",
+            distanceM = "100",
+        )
+        val sameOrigin = first.copy(recordId = "session-b")
+        val differentDistance = first.copy(recordId = "session-c", origin = "source.c", distanceM = "5300")
+        val nonOverlapping = first.copy(
+            recordId = "session-d",
+            origin = "source.d",
+            startTime = "2026-11-08T09:00:21Z",
+            endTime = "2026-11-08T09:00:41Z",
+        )
+
+        assertEquals(4, HealthMapper.collapseMirroredWorkoutCopies(listOf(first, sameOrigin, differentDistance, nonOverlapping)).size)
     }
 
     @Test fun mirroredWorkoutDeduplicationComparesHeartRateContentButNotSourceIds() {
@@ -86,8 +130,8 @@ class ContractTest {
             heartRateSamples = listOf(HeartRateSample("hr-b", "source.b", "2026-11-08T09:10:00Z", 120)),
         )
 
-        assertEquals(1, HealthMapper.collapseExactMirroredWorkouts(listOf(first, mirror)).size)
+        assertEquals(1, HealthMapper.collapseMirroredWorkoutCopies(listOf(first, mirror)).size)
         val differingHeartRate = mirror.copy(heartRateSamples = listOf(HeartRateSample("hr-c", "source.b", "2026-11-08T09:10:00Z", 121)))
-        assertEquals(2, HealthMapper.collapseExactMirroredWorkouts(listOf(first, differingHeartRate)).size)
+        assertEquals(2, HealthMapper.collapseMirroredWorkoutCopies(listOf(first, differingHeartRate)).size)
     }
 }
