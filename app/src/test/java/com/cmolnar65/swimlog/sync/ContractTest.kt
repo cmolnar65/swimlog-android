@@ -75,6 +75,28 @@ class ContractTest {
         assertTrue(result.any { it.recordId == "session-c" })
     }
 
+    @Test fun collapsesHighOverlapSessionsWhenDistanceIsUnavailable() {
+        // Synthetic sessions with a ten-minute start offset and about 94% overlap.
+        val earlier = WorkoutImport(
+            recordId = "session-early",
+            origin = "source.a",
+            activity = "walking",
+            startTime = "2026-01-01T08:57:00Z",
+            endTime = "2026-01-01T10:03:05Z",
+        )
+        val later = WorkoutImport(
+            recordId = "session-later",
+            origin = "source.b",
+            activity = "walking",
+            startTime = "2026-01-01T09:07:00Z",
+            endTime = "2026-01-01T10:06:48Z",
+        )
+
+        val result = HealthMapper.collapseMirroredWorkoutCopies(listOf(earlier, later))
+
+        assertEquals(1, result.size)
+    }
+
     @Test fun distanceMatchedOverlappingSessionsFromDifferentSourcesAreMirrors() {
         val first = WorkoutImport(
             recordId = "session-a",
@@ -135,6 +157,25 @@ class ContractTest {
         )
 
         assertEquals(4, HealthMapper.collapseMirroredWorkoutCopies(listOf(first, sameOrigin, differentDistance, nonOverlapping)).size)
+    }
+
+    @Test fun preservesShortContainedSessionThatDiffersSubstantiallyInDuration() {
+        val long = WorkoutImport(
+            recordId = "session-long",
+            origin = "source.a",
+            activity = "walking",
+            startTime = "2026-11-08T09:00:00Z",
+            endTime = "2026-11-08T10:00:00Z",
+            distanceM = "5200",
+        )
+        val shorter = long.copy(
+            recordId = "session-short",
+            origin = "source.b",
+            startTime = "2026-11-08T09:10:00Z",
+            endTime = "2026-11-08T09:50:00Z",
+        )
+
+        assertEquals(2, HealthMapper.collapseMirroredWorkoutCopies(listOf(long, shorter)).size)
     }
 
     @Test fun mirroredWorkoutDeduplicationComparesHeartRateContentButNotSourceIds() {
