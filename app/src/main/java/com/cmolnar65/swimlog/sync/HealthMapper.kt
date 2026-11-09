@@ -8,6 +8,8 @@ import androidx.health.connect.client.records.HeartRateRecord
 import androidx.health.connect.client.records.LeanBodyMassRecord
 import androidx.health.connect.client.records.WeightRecord
 import java.math.BigDecimal
+import java.time.Duration
+import java.time.Instant
 
 data class HealthRecords(
     val sessions: List<ExerciseSessionRecord>,
@@ -72,7 +74,7 @@ object HealthMapper {
                 )))
             }
         }
-        val uniqueWorkouts = collapseExactMirroredWorkouts(mappedWorkouts)
+        val uniqueWorkouts = collapseMirroredWorkoutCopies(mappedWorkouts)
         return ImportBatch(
             batchId = java.util.UUID.randomUUID().toString(),
             workouts = uniqueWorkouts,
@@ -81,34 +83,61 @@ object HealthMapper {
         )
     }
 
-    /** Collapse only workout copies with identical activity, interval, distance, and HR content. */
-    internal fun collapseExactMirroredWorkouts(workouts: List<WorkoutImport>): List<WorkoutImport> {
-        val canonicalByContent = linkedMapOf<WorkoutContent, WorkoutImport>()
+    /**
+     * Suppress strong cross-source mirror candidates. Measured fields must agree;
+     * interval boundaries may differ by small source rounding. When both sources
+     * lack distance, require especially close interval boundaries.
+     */
+    internal fun collapseMirroredWorkoutCopies(workouts: List<WorkoutImport>): List<WorkoutImport> {
+        val retained = mutableListOf<WorkoutImport>()
         workouts.forEach { workout ->
-            val content = WorkoutContent(
-                activity = workout.activity,
-                environment = workout.environment,
-                startTime = workout.startTime,
-                endTime = workout.endTime,
-                distanceM = workout.distanceM,
-                heartRate = workout.heartRateSamples.map { it.time to it.bpm }.sortedWith(compareBy({ it.first }, { it.second })),
-            )
-            val existing = canonicalByContent[content]
-            if (existing == null || compareValuesBy(workout, existing, WorkoutImport::origin, WorkoutImport::recordId) < 0) {
-                canonicalByContent[content] = workout
+            val matchIndex = retained.indexOfFirst { existing -> isMirroredWorkoutCopy(existing, workout) }
+            if (matchIndex < 0) {
+                retained += workout
+            } else if (compareValuesBy(workout, retained[matchIndex], WorkoutImport::origin, WorkoutImport::recordId) < 0) {
+                retained[matchIndex] = workout
             }
         }
-        return canonicalByContent.values.toList()
+        return retained
     }
 
-    private data class WorkoutContent(
-        val activity: String,
-        val environment: String?,
-        val startTime: String,
-        val endTime: String,
-        val distanceM: String?,
-        val heartRate: List<Pair<String, Int>>,
-    )
+    private fun isMirroredWorkoutCopy(first: WorkoutImport, second: WorkoutImport): Boolean {
+        if (first.origin == second.origin) return false
+        if (first.activity != second.activity || first.environment != second.environment) return false
+        if (first.distanceM != second.distanceM) return false
+
+        val firstHeartRate = first.heartRateSamples.map { it.time to it.bpm }.sortedWith(compareBy({ it.first }, { it.second }))
+        val secondHeartRate = second.heartRateSamples.map { it.time to it.bpm }.sortedWith(compareBy({ it.first }, { it.second }))
+        if (firstHeartRate != secondHeartRate) return false
+
+        val firstStart = Instant.parse(first.startTime)
+        val secondStart = Instant.parse(second.startTime)
+        val firstEnd = Instant.parse(first.endTime)
+        val secondEnd = Instant.parse(second.endTime)
+        val startDeltaMs = absMillis(Duration.between(firstStart, secondStart))
+        val endDeltaMs = absMillis(Duration.between(firstEnd, secondEnd))
+
+        // For sessions with distance, allow modest source boundary rounding while
+        // requiring near-total interval overlap. For sessions with no distance,
+        // use tighter tolerances so absence of distance alone cannot merge records.
+        val startToleranceMs = if (first.distanceM == null) 5_000L else 60_000L
+        val endToleranceMs = if (first.distanceM == null) 1_000L else 60_000L
+        if (startDeltaMs > startToleranceMs || endDeltaMs > endToleranceMs) return false
+
+        val overlapStart = maxOf(firstStart, secondStart)
+        val overlapEnd = minOf(firstEnd, secondEnd)
+        if (!overlapStart.isBefore(overlapEnd)) return false
+
+        val shorterDuration = minOf(
+            Duration.between(firstStart, firstEnd).toMillis(),
+            Duration.between(secondStart, secondEnd).toMillis(),
+        )
+        if (shorterDuration <= 0) return false
+        val overlapDuration = Duration.between(overlapStart, overlapEnd).toMillis()
+        return overlapDuration.toDouble() / shorterDuration.toDouble() >= 0.99
+    }
+
+    private fun absMillis(duration: Duration): Long = kotlin.math.abs(duration.toMillis())
 
     internal fun activity(type: Int): Pair<String, String?>? = when (type) {
         ExerciseSessionRecord.EXERCISE_TYPE_SWIMMING_POOL -> "pool_swimming" to null
