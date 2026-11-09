@@ -10,7 +10,7 @@ class HealthPrivacyActivityTest {
 
         assertTrue(disclosure.contains("exercise sessions"))
         assertTrue(disclosure.contains("blood pressure"))
-        assertTrue(disclosure.contains("HTTPS Swim Log site"))
+        assertTrue(disclosure.contains("HTTPS Swim Log account"))
         assertTrue(disclosure.contains("stored encrypted"))
         assertTrue(disclosure.contains("does not write to Health Connect"))
         assertTrue(disclosure.contains("older than 30 days"))
