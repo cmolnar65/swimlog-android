@@ -9,6 +9,7 @@
 - Supported workout classifications are pool swimming, open-water swimming, running, treadmill running, and walking. Cycling and unknown activities are unsupported.
 - Supported private measurements are weight, body composition (weight, body fat, lean body mass), paired blood pressure, and heart-rate samples matched to an imported workout.
 - Exact repeat reads are idempotent. Keep and flag likely cross-source duplicates. Preserve conflicts; never silently merge or replace a record.
+- Distance records may be associated across source apps by time interval. Contained non-overlapping segments from one source are summed only when their combined intervals cover at least 90% of the workout; a near-session record must overlap at least 90% of the shorter interval and the shorter interval must be at least 80% of the longer. If supported per-source totals differ by more than 15% of the larger total, leave distance blank. If they agree within 15%, select one stable source total without averaging or adding across sources.
 - Before upload, Android suppresses strong cross-source workout mirror candidates when activity, environment, and heart-rate samples agree, distances are within 10% when both are present, and intervals overlap by at least 90% of the shorter interval; the shorter duration must also be at least 80% of the longer. Missing distance is unknown, not a mismatch, and a mapped distance is preferred when selecting the retained copy. Same-source records and records with conflicting measured content remain separate; the sync summary reports skipped mirror candidates.
 - Do not infer an activity subtype from GPS presence or absence. Do not invent pool lengths, strokes, splits, moving time, or routes.
 
@@ -37,7 +38,7 @@ Each workout accepts only these fields:
 | `activity` | Required: `pool_swimming`, `open_water_swimming`, `running`, `running_treadmill`, or `walking`. |
 | `environment` | Optional `indoor` or `outdoor`, supported only for running. Treadmill running is stored as indoor. |
 | `start_time`, `end_time` | Required ISO-8601 timestamps with `Z` or explicit offset; end must follow start. Preserve source offsets. |
-| `distance_m` | Optional positive finite distance in meters. Only send when reliably matched to this workout and origin; do not combine overlapping sources. |
+| `distance_m` | Optional positive finite distance in meters. Match by sufficiently strong time-interval coverage even when the distance source differs from the workout source. Resolve per-source totals conservatively; leave blank for conflicting or overlapping candidates. |
 | `pool_length_value`, `pool_length_unit` | Optional pair; unit is `m` or `yd`. Include only when the source explicitly establishes the pool course. Otherwise omit both; Swim Log keeps course unclassified. |
 | `heart_rate_samples[]` | Optional samples with `record_id`, matching `origin`, `time`, and integer `bpm` (20–250). Use unique stable sample IDs; include only samples within the workout interval. |
 

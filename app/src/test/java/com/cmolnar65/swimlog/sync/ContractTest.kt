@@ -13,6 +13,9 @@ import org.junit.Test
 class ContractTest {
     private val json = Json { encodeDefaults = true; explicitNulls = false }
 
+    private val distanceSessionStart = Instant.parse("2026-11-08T16:00:00Z")
+    private val distanceSessionEnd = Instant.parse("2026-11-08T17:00:00Z")
+
     @Test fun classifiesOnlyApprovedExerciseTypes() {
         assertEquals("pool_swimming", HealthMapper.activity(ExerciseSessionRecord.EXERCISE_TYPE_SWIMMING_POOL)?.first)
         assertEquals("open_water_swimming", HealthMapper.activity(ExerciseSessionRecord.EXERCISE_TYPE_SWIMMING_OPEN_WATER)?.first)
@@ -44,6 +47,77 @@ class ContractTest {
         val instant = Instant.parse("2026-11-01T13:00:00Z")
         assertEquals("2026-11-01T09:00:00-04:00", Mapping.isoTime(instant, ZoneOffset.ofHours(-4)))
         assertEquals("2026-11-01T13:00:00Z", Mapping.isoTime(instant, null))
+    }
+
+    @Test fun matchesDistanceFromDifferentSourceWhenItsIntervalCoversWorkout() {
+        val distance = DistanceInterval(
+            origin = "watch.app",
+            start = distanceSessionStart,
+            end = distanceSessionEnd,
+            meters = 1500.0,
+        )
+
+        assertEquals(
+            1500.0,
+            HealthMapper.resolveDistanceMeters(distanceSessionStart, distanceSessionEnd, listOf(distance))!!,
+            0.0,
+        )
+    }
+
+    @Test fun sumsContainedNonOverlappingDistanceSegmentsWithNearCompleteTimeCoverage() {
+        val middle = distanceSessionStart.plusSeconds(30 * 60)
+        val distances = listOf(
+            DistanceInterval("watch.app", distanceSessionStart, middle, 1200.0),
+            DistanceInterval("watch.app", middle, distanceSessionEnd, 1300.0),
+        )
+
+        assertEquals(
+            2500.0,
+            HealthMapper.resolveDistanceMeters(distanceSessionStart, distanceSessionEnd, distances)!!,
+            0.0,
+        )
+    }
+
+    @Test fun leavesDistanceBlankForWeakIntervalAssociation() {
+        val weakMatch = DistanceInterval(
+            origin = "phone.app",
+            start = distanceSessionStart.minusSeconds(30 * 60),
+            end = distanceSessionStart.plusSeconds(30 * 60),
+            meters = 900.0,
+        )
+
+        assertEquals(null, HealthMapper.resolveDistanceMeters(distanceSessionStart, distanceSessionEnd, listOf(weakMatch)))
+    }
+
+    @Test fun leavesDistanceBlankWhenSupportedSourceTotalsDifferByMoreThanFifteenPercent() {
+        val distances = listOf(
+            DistanceInterval("source.a", distanceSessionStart, distanceSessionEnd, 5000.0),
+            DistanceInterval("source.b", distanceSessionStart, distanceSessionEnd, 5900.0),
+        )
+
+        assertEquals(null, HealthMapper.resolveDistanceMeters(distanceSessionStart, distanceSessionEnd, distances))
+    }
+
+    @Test fun choosesOneStableSourceTotalWhenSupportedTotalsAreWithinFifteenPercent() {
+        val distances = listOf(
+            DistanceInterval("z.watch", distanceSessionStart, distanceSessionEnd, 5000.0),
+            DistanceInterval("a.phone", distanceSessionStart, distanceSessionEnd, 5600.0),
+        )
+
+        assertEquals(
+            5600.0,
+            HealthMapper.resolveDistanceMeters(distanceSessionStart, distanceSessionEnd, distances)!!,
+            0.0,
+        )
+    }
+
+    @Test fun leavesDistanceBlankForOverlappingRecordsFromOneSource() {
+        val distances = listOf(
+            DistanceInterval("watch.app", distanceSessionStart, distanceSessionStart.plusSeconds(45 * 60), 3500.0),
+            DistanceInterval("watch.app", distanceSessionStart.plusSeconds(15 * 60), distanceSessionEnd, 3400.0),
+        )
+
+        assertEquals(null, HealthMapper.resolveDistanceMeters(distanceSessionStart, distanceSessionEnd, distances))
     }
 
     @Test fun retriesOnlyExplicitTransientStatus() {

@@ -21,19 +21,31 @@ data class HealthRecords(
     val bloodPressures: List<BloodPressureRecord>,
 )
 
+/** A source-tagged interval used by the conservative distance matcher. */
+internal data class DistanceInterval(
+    val origin: String,
+    val start: Instant,
+    val end: Instant,
+    val meters: Double,
+)
+
 object HealthMapper {
     fun map(records: HealthRecords): ImportBatch {
         val mappedWorkouts = records.sessions.mapNotNull { session ->
             val mapped = activity(session.exerciseType) ?: return@mapNotNull null
             val origin = session.metadata.dataOrigin.packageName
-            val matchingDistances = records.distances.filter {
-                it.metadata.dataOrigin.packageName == origin &&
-                    !it.startTime.isBefore(session.startTime) && !it.endTime.isAfter(session.endTime)
-            }.sortedBy { it.startTime }
-            val hasOverlaps = matchingDistances.zipWithNext().any { (a, b) -> b.startTime.isBefore(a.endTime) }
-            val distance = if (matchingDistances.isNotEmpty() && !hasOverlaps) {
-                matchingDistances.sumOf { it.distance.inMeters }
-            } else null
+            val distance = resolveDistanceMeters(
+                session.startTime,
+                session.endTime,
+                records.distances.map {
+                    DistanceInterval(
+                        origin = it.metadata.dataOrigin.packageName,
+                        start = it.startTime,
+                        end = it.endTime,
+                        meters = it.distance.inMeters,
+                    )
+                },
+            )
             val hr = records.heartRates.flatMap { hrRecord ->
                 if (hrRecord.metadata.dataOrigin.packageName != origin) return@flatMap emptyList()
                 hrRecord.samples.mapIndexedNotNull { index, sample ->
@@ -146,6 +158,73 @@ object HealthMapper {
         val difference = firstValue.subtract(secondValue).abs()
         // Compare with the larger value so the threshold is symmetric regardless of source order.
         return difference.multiply(BigDecimal.TEN) <= larger
+    }
+
+    /**
+     * Match distance intervals to a session even when their Health Connect source
+     * differs. A source contributes a candidate total only when its non-overlapping
+     * intervals cover at least 90% of the session. Conflicting source totals over
+     * 15% apart, overlapping records from one source, or weak time coverage leave
+     * distance blank. When source totals agree, choose one stable source total;
+     * never average or add totals from different apps.
+     */
+    internal fun resolveDistanceMeters(
+        sessionStart: Instant,
+        sessionEnd: Instant,
+        intervals: List<DistanceInterval>,
+    ): Double? {
+        if (!sessionStart.isBefore(sessionEnd)) return null
+        val sessionMillis = Duration.between(sessionStart, sessionEnd).toMillis()
+        if (sessionMillis <= 0) return null
+
+        val candidates = intervals
+            .filter { it.meters.isFinite() && it.meters > 0.0 && it.start.isBefore(it.end) }
+            .filter { interval ->
+                val fullyContained = !interval.start.isBefore(sessionStart) && !interval.end.isAfter(sessionEnd)
+                if (fullyContained) return@filter true
+                val overlapStart = maxOf(sessionStart, interval.start)
+                val overlapEnd = minOf(sessionEnd, interval.end)
+                if (!overlapStart.isBefore(overlapEnd)) return@filter false
+                val overlapMillis = Duration.between(overlapStart, overlapEnd).toMillis()
+                val intervalMillis = Duration.between(interval.start, interval.end).toMillis()
+                val shorterMillis = minOf(sessionMillis, intervalMillis)
+                val longerMillis = maxOf(sessionMillis, intervalMillis)
+                shorterMillis > 0 &&
+                    overlapMillis.toDouble() / shorterMillis >= 0.90 &&
+                    shorterMillis.toDouble() / longerMillis >= 0.80
+            }
+            .groupBy { it.origin }
+
+        val sourceTotals = mutableListOf<Pair<String, Double>>()
+        for ((origin, records) in candidates) {
+            val ordered = records.sortedBy { it.start }
+            if (ordered.zipWithNext().any { (a, b) -> b.start.isBefore(a.end) }) return null
+
+            var coveredMillis = 0L
+            var totalMeters = 0.0
+            for (record in ordered) {
+                val overlapStart = maxOf(sessionStart, record.start)
+                val overlapEnd = minOf(sessionEnd, record.end)
+                coveredMillis += Duration.between(overlapStart, overlapEnd).toMillis()
+                totalMeters += record.meters
+            }
+            if (coveredMillis.toDouble() / sessionMillis >= 0.90 && totalMeters.isFinite() && totalMeters > 0.0) {
+                sourceTotals += origin to totalMeters
+            }
+        }
+
+        if (sourceTotals.isEmpty()) return null
+        val distances = sourceTotals.map { BigDecimal.valueOf(it.second) }
+        val smallest = distances.minOrNull() ?: return null
+        val largest = distances.maxOrNull() ?: return null
+        if (largest.signum() <= 0) return null
+        if (largest.subtract(smallest).multiply(BigDecimal.valueOf(100)) > largest.multiply(BigDecimal.valueOf(15))) {
+            return null
+        }
+
+        // Both mirrored workouts see the same total candidates, so the choice is
+        // stable across session origins and cannot create a second copy by itself.
+        return sourceTotals.minByOrNull { it.first }?.second
     }
 
     internal fun activity(type: Int): Pair<String, String?>? = when (type) {
