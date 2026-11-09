@@ -139,7 +139,7 @@ object HealthMapper {
                         repetitions = segment.repetitions,
                     )
                 },
-                route = (routeOverrides[session.metadata.id] ?: (session.exerciseRouteResult as? ExerciseRouteResult.Data)?.exerciseRoute)?.locations.orEmpty().mapNotNull { point ->
+                route = (routeOverrides[session.metadata.id] ?: (session.exerciseRouteResult as? ExerciseRouteResult.Data)?.exerciseRoute)?.route.orEmpty().mapNotNull { point ->
                     if (point.time.isBefore(session.startTime) || point.time.isAfter(session.endTime) ||
                         !point.latitude.isFinite() || !point.longitude.isFinite() ||
                         point.latitude !in -90.0..90.0 || point.longitude !in -180.0..180.0) null
