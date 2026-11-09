@@ -13,6 +13,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.HealthConnectFeatures
 import androidx.health.connect.client.PermissionController
+import androidx.health.connect.client.contracts.ExerciseRouteRequestContract
+import androidx.health.connect.client.records.ExerciseRoute
 import androidx.health.connect.client.permission.HealthPermission
 import androidx.lifecycle.lifecycleScope
 import androidx.work.ExistingPeriodicWorkPolicy
@@ -28,6 +30,7 @@ import com.cmolnar65.swimlog.sync.SyncWorker
 import com.cmolnar65.swimlog.sync.HealthConnectPermissions
 import com.cmolnar65.swimlog.sync.SyncEngine
 import com.cmolnar65.swimlog.sync.SyncFailureMessage
+import com.cmolnar65.swimlog.sync.HealthReader
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.launch
 
@@ -38,6 +41,10 @@ class MainActivity : ComponentActivity() {
     private lateinit var endpoint: EditText
     private var connectAfterRead = false
     private var syncAfterPermission = false
+    private var routeConsentQueue: List<String> = emptyList()
+    private var routeConsentIndex = 0
+    private var routeOverrides: MutableMap<String, ExerciseRoute> = mutableMapOf()
+    private var routeSyncClient: HealthConnectClient? = null
 
     private val healthPermissions = HealthConnectPermissions.reads
     private val readPermissionLauncher = registerForActivityResult(
@@ -54,6 +61,12 @@ class MainActivity : ComponentActivity() {
     ) { granted ->
         if (HealthPermission.PERMISSION_READ_HEALTH_DATA_IN_BACKGROUND in granted) enableBackgroundSync()
         status.text = if (HealthPermission.PERMISSION_READ_HEALTH_DATA_IN_BACKGROUND in granted) "Background sync enabled; Android may defer scheduled work." else "Background access was not granted. Use Sync now while the app is open."
+    }
+    private val exerciseRouteLauncher = registerForActivityResult(ExerciseRouteRequestContract()) { route ->
+        val sessionId = routeConsentQueue.getOrNull(routeConsentIndex)
+        if (sessionId != null && route != null) routeOverrides[sessionId] = route
+        routeConsentIndex++
+        requestNextRouteOrSync()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -79,7 +92,7 @@ class MainActivity : ComponentActivity() {
             status.text = "Saved connection removed from this device. Revoke the app token in Swim Log settings if you also want to invalidate it on the server."
         })
         root.addView(status, matchWidth())
-        root.addView(TextView(this).apply { text = "Read-only: swimming/running/walking sessions, matched distance and workout heart rate, weight, body fat, lean mass, and blood pressure. Records stay on this device only while being sent over HTTPS. No cycling, GPS routes, Health Connect writes, or records older than 30 days." })
+        root.addView(TextView(this).apply { text = "Read-only: swimming, running, walking, and cycling sessions; matched distance and workout heart rate; available laps, exercise segments, speed, active and total calories, elevation, floors, step/cycling cadence, power, and route points; weight, body fat, lean mass, and blood pressure. Routes are included only when Health Connect provides access. Records stay on this device only while being sent over HTTPS. No Health Connect writes or records older than 30 days." })
         setContentView(root)
         handleAuthorizationRedirect(intent?.dataString)
         intent?.let { setIntent(Intent(it).apply { data = null }) }
@@ -214,14 +227,18 @@ class MainActivity : ComponentActivity() {
             status.text = "Sync running. Health values are not shown here."
             try {
                 val client = HealthConnectClient.getOrCreate(this@MainActivity)
-                val summary = SyncEngine(secretStore).sync(client)
-                val canRetryInBackground = HealthPermission.PERMISSION_READ_HEALTH_DATA_IN_BACKGROUND in client.permissionController.getGrantedPermissions()
-                if (summary.retryable && canRetryInBackground) SyncWorker.enqueueRetry(this@MainActivity)
-                val retryText = if (!summary.retryable) "" else if (canRetryInBackground) "; transient items will retry" else "; tap Sync now again to retry transient items"
-                val mirrorText = if (summary.mirroredWorkoutsSuppressed == 0) "" else "; ${summary.mirroredWorkoutsSuppressed} mirrored workout copies skipped"
-                val message = "Sync complete: ${summary.added} added, ${summary.duplicates} already present, ${summary.conflicts} conflicts, ${summary.rejected} rejected$retryText$mirrorText."
-                status.text = message
-                SyncEngine.persistSummary(this@MainActivity, message)
+                routeSyncClient = client
+                routeOverrides = mutableMapOf()
+                val granted = client.permissionController.getGrantedPermissions()
+                val records = HealthReader(client).readLast30Days(granted)
+                routeConsentQueue = runCatching { HealthReader(client).routesRequiringConsent(records.sessions) }.getOrDefault(emptyList())
+                routeConsentIndex = 0
+                if (routeConsentQueue.isNotEmpty()) {
+                    status.text = "Health Connect may ask for route access for each workout that includes a route. You can deny any request; the workout will still sync without its route."
+                    requestNextRouteOrSync()
+                    return@launch
+                }
+                finishForegroundSync(client)
             } catch (_: com.cmolnar65.swimlog.sync.TransientImportException) {
                 val canRetry = runCatching {
                     HealthPermission.PERMISSION_READ_HEALTH_DATA_IN_BACKGROUND in
@@ -235,6 +252,45 @@ class MainActivity : ComponentActivity() {
                 status.text = SyncFailureMessage.from(failure)
                 SyncEngine.persistSummary(this@MainActivity, status.text.toString())
             }
+        }
+    }
+
+    private fun requestNextRouteOrSync() {
+        val client = routeSyncClient ?: return
+        if (routeConsentIndex < routeConsentQueue.size) {
+            exerciseRouteLauncher.launch(routeConsentQueue[routeConsentIndex])
+        } else {
+            routeConsentQueue = emptyList()
+            routeConsentIndex = 0
+            routeSyncClient = null
+            lifecycleScope.launch { finishForegroundSync(client) }
+        }
+    }
+
+    private suspend fun finishForegroundSync(client: HealthConnectClient) {
+        try {
+                val summary = SyncEngine(secretStore).sync(client, routeOverrides.toMap())
+                val canRetryInBackground = HealthPermission.PERMISSION_READ_HEALTH_DATA_IN_BACKGROUND in client.permissionController.getGrantedPermissions()
+                if (summary.retryable && canRetryInBackground) SyncWorker.enqueueRetry(this@MainActivity)
+                val retryText = if (!summary.retryable) "" else if (canRetryInBackground) "; transient items will retry" else "; tap Sync now again to retry transient items"
+                val mirrorText = if (summary.mirroredWorkoutsSuppressed == 0) "" else "; ${summary.mirroredWorkoutsSuppressed} mirrored workout copies skipped"
+                val message = "Sync complete: ${summary.added} added, ${summary.duplicates} already present, ${summary.conflicts} conflicts, ${summary.rejected} rejected$retryText$mirrorText."
+                status.text = message
+                SyncEngine.persistSummary(this@MainActivity, message)
+        } catch (_: com.cmolnar65.swimlog.sync.TransientImportException) {
+                val canRetry = runCatching {
+                    HealthPermission.PERMISSION_READ_HEALTH_DATA_IN_BACKGROUND in
+                        HealthConnectClient.getOrCreate(this@MainActivity).permissionController.getGrantedPermissions()
+                }.getOrDefault(false)
+                if (canRetry) SyncWorker.enqueueRetry(this@MainActivity)
+                val message = if (canRetry) "Temporary connection problem; Android will retry." else "Temporary connection problem. Tap Sync now again when connected."
+                status.text = message
+                SyncEngine.persistSummary(this@MainActivity, message)
+        } catch (failure: Exception) {
+                status.text = SyncFailureMessage.from(failure)
+                SyncEngine.persistSummary(this@MainActivity, status.text.toString())
+        } finally {
+            routeOverrides = mutableMapOf()
         }
     }
 

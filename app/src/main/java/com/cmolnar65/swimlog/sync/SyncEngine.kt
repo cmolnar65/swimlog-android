@@ -1,17 +1,18 @@
 package com.cmolnar65.swimlog.sync
 
 import androidx.health.connect.client.HealthConnectClient
+import androidx.health.connect.client.records.ExerciseRoute
 import com.cmolnar65.swimlog.security.SecretStore
 import java.time.Instant
 
 class SyncEngine(private val store: SecretStore) {
-    suspend fun sync(client: HealthConnectClient): SyncSummary {
+    suspend fun sync(client: HealthConnectClient, routeOverrides: Map<String, ExerciseRoute> = emptyMap()): SyncSummary {
         val endpoint = store.endpoint() ?: error("Save the Swim Log site first")
         val token = store.token() ?: error("Sign in to Swim Log first")
         val granted = client.permissionController.getGrantedPermissions()
         if (granted.intersect(HealthConnectPermissions.reads).isEmpty()) error("No Health Connect read permissions are granted")
         val records = HealthReader(client).readLast30Days(granted)
-        val payload = HealthMapper.map(records)
+        val payload = HealthMapper.map(records, routeOverrides)
         if (payload.workouts.isEmpty() && payload.measurements.isEmpty()) {
             return SyncSummary(0, 0, 0, 0, 0, false, payload.mirroredWorkoutsSuppressed)
         }

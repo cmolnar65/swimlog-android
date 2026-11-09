@@ -22,6 +22,9 @@ class ContractTest {
         assertEquals("running", HealthMapper.activity(ExerciseSessionRecord.EXERCISE_TYPE_RUNNING)?.first)
         assertEquals("running_treadmill", HealthMapper.activity(ExerciseSessionRecord.EXERCISE_TYPE_RUNNING_TREADMILL)?.first)
         assertEquals("walking", HealthMapper.activity(ExerciseSessionRecord.EXERCISE_TYPE_WALKING)?.first)
+        assertEquals("cycling", HealthMapper.activity(ExerciseSessionRecord.EXERCISE_TYPE_BIKING)?.first)
+        assertEquals("cycling", HealthMapper.activity(ExerciseSessionRecord.EXERCISE_TYPE_BIKING_STATIONARY)?.first)
+        assertEquals("indoor", HealthMapper.activity(ExerciseSessionRecord.EXERCISE_TYPE_BIKING_STATIONARY)?.second)
         assertEquals(null, HealthMapper.activity(Int.MAX_VALUE))
     }
 
@@ -47,6 +50,65 @@ class ContractTest {
         val instant = Instant.parse("2026-11-01T13:00:00Z")
         assertEquals("2026-11-01T09:00:00-04:00", Mapping.isoTime(instant, ZoneOffset.ofHours(-4)))
         assertEquals("2026-11-01T13:00:00Z", Mapping.isoTime(instant, null))
+    }
+
+    @Test fun workoutSummaryIntervalsMustCoverSessionWithoutOverlap() {
+        val midpoint = distanceSessionStart.plusSeconds(30 * 60)
+        val complete = listOf(
+            Triple(distanceSessionStart, midpoint, 125.0),
+            Triple(midpoint, distanceSessionEnd, 75.0),
+        )
+        assertEquals(200.0, sumContainedNonOverlappingIntervals(distanceSessionStart, distanceSessionEnd, complete)!!, 0.0)
+        assertEquals(null, sumContainedNonOverlappingIntervals(distanceSessionStart, distanceSessionEnd, listOf(
+            Triple(distanceSessionStart, distanceSessionStart.plusSeconds(30 * 60), 10.0),
+            Triple(distanceSessionStart.plusSeconds(20 * 60), distanceSessionEnd, 20.0),
+        )))
+        assertEquals(null, sumContainedNonOverlappingIntervals(distanceSessionStart, distanceSessionEnd, listOf(
+            Triple(distanceSessionStart, distanceSessionStart.plusSeconds(50 * 60), 10.0),
+        )))
+    }
+
+    @Test fun serializesOptionalWorkoutDetailsWithoutChangingContractVersionOrAddingOwnerData() {
+        val payload = ImportBatch(
+            batchId = "detail-batch",
+            workouts = listOf(WorkoutImport(
+                recordId = "hc-run-1",
+                origin = "watch.app",
+                activity = "cycling",
+                environment = "indoor",
+                startTime = "2026-11-01T09:00:00-06:00",
+                endTime = "2026-11-01T10:00:00-06:00",
+                details = WorkoutDetails(
+                    laps = listOf(WorkoutLap("2026-11-01T09:00:00-06:00", "2026-11-01T09:15:00-06:00", "4200")),
+                    segments = listOf(WorkoutSegment("2026-11-01T09:00:00-06:00", "2026-11-01T09:15:00-06:00", 7)),
+                    route = listOf(RoutePoint("2026-11-01T09:05:00-06:00", 39.7, -105.1, 1600.0, 4.0)),
+                    totalCaloriesKcal = "350",
+                    activeCaloriesKcal = "320",
+                    elevationGainM = "125",
+                    floorsClimbed = "3",
+                    averageSpeedMps = "4.2",
+                    maximumSpeedMps = "6.1",
+                    speedSamples = listOf(SpeedSample("2026-11-01T09:05:00-06:00", 4.2)),
+                    stepCadenceSamples = listOf(WorkoutMetricSample("2026-11-01T09:05:00-06:00", 160.0)),
+                    cyclingCadenceSamples = listOf(WorkoutMetricSample("2026-11-01T09:05:00-06:00", 82.0)),
+                    powerSamples = listOf(WorkoutMetricSample("2026-11-01T09:05:00-06:00", 210.0)),
+                ),
+            )),
+        )
+        val encoded = json.encodeToString(payload)
+        assertTrue(encoded.contains("\"activity\":\"cycling\""))
+        assertTrue(encoded.contains("\"laps\":"))
+        assertTrue(encoded.contains("\"segments\":"))
+        assertTrue(encoded.contains("\"latitude\":39.7"))
+        assertTrue(encoded.contains("\"total_calories_kcal\":\"350\""))
+        assertTrue(encoded.contains("\"active_calories_kcal\":\"320\""))
+        assertTrue(encoded.contains("\"elevation_gain_m\":\"125\""))
+        assertTrue(encoded.contains("\"floors_climbed\":\"3\""))
+        assertTrue(encoded.contains("\"step_cadence_samples\":"))
+        assertTrue(encoded.contains("\"cycling_cadence_samples\":"))
+        assertTrue(encoded.contains("\"power_samples\":"))
+        assertTrue(encoded.contains("\"meters_per_second\":4.2"))
+        assertFalse(encoded.contains("owner_id"))
     }
 
     @Test fun matchesDistanceFromDifferentSourceWhenItsIntervalCoversWorkout() {

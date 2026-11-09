@@ -46,7 +46,7 @@ class ImportClient(private val json: Json = Json { ignoreUnknownKeys = true; enc
         batch.workouts.forEach { pieces += ImportBatch(batchId = UUID.randomUUID().toString(), workouts = listOf(it)) }
         batch.measurements.chunked(100).forEach { pieces += ImportBatch(batchId = UUID.randomUUID().toString(), measurements = it) }
         return pieces.map { piece ->
-            if (json.encodeToString(piece).toByteArray(Charsets.UTF_8).size > 512 * 1024) {
+            if (json.encodeToString(piece).toByteArray(Charsets.UTF_8).size > 2 * 1024 * 1024) {
                 throw SyncRequestValidationException(SyncRequestIssue.RECORD_TOO_LARGE)
             }
             piece
