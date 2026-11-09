@@ -21,7 +21,7 @@ The app asks for read access only to supported exercise sessions, distance, hear
 
 The app omits unclassified exercise types, unsupported cycling, ambiguous distance associations, and ambiguous heart-rate associations. It does not infer activity from GPS, calculate health metrics, combine conflicting records, or create swim laps, pool lengths, splits, or routes. Denying a data-type permission excludes that type from future syncs. The server token determines the owner; the app sends no owner ID.
 
-Before upload, the app suppresses strong mirrored workout candidates from different Health Connect sources when activity, environment, and heart-rate samples agree, distances are within 10% when present, and the workout intervals almost completely overlap. When both sources omit distance, stricter start/end tolerances apply; if only one source has distance, both records remain. Same-source records and candidates with conflicting measured content remain separate. The sync summary reports how many mirrored copies were skipped.
+Before upload, the app suppresses strong mirrored workout candidates from different Health Connect sources when activity, environment, and heart-rate samples agree, distances are within 10% when both are present, and intervals overlap by at least 90% of the shorter session; the shorter session must also be at least 80% as long as the longer one. Missing distance is treated as unknown, not as a mismatch, and a mapped distance is preferred when selecting the retained copy. Same-source records and candidates with conflicting measured content remain separate. The sync summary reports how many mirrored copies were skipped.
 
 ## Build and test checks
 
