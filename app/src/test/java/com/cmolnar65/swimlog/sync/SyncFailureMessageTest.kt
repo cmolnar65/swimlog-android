@@ -5,11 +5,11 @@ import org.junit.Test
 
 class SyncFailureMessageTest {
     @Test
-    fun unauthorizedResponseSuggestsCheckingTokenWithoutExposingIt() {
+    fun unauthorizedResponseSuggestsSigningInWithoutExposingToken() {
         val message = SyncFailureMessage.from(PermanentImportException(401))
 
         assertTrue(message.contains("HTTP 401"))
-        assertTrue(message.contains("still active"))
+        assertTrue(message.contains("Sign in again"))
         assertTrue(!message.contains("slhc_"))
     }
 

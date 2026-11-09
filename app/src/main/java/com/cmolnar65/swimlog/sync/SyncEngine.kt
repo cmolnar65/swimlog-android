@@ -7,7 +7,7 @@ import java.time.Instant
 class SyncEngine(private val store: SecretStore) {
     suspend fun sync(client: HealthConnectClient): SyncSummary {
         val endpoint = store.endpoint() ?: error("Save the Swim Log site first")
-        val token = store.token() ?: error("Save the owner-scoped token first")
+        val token = store.token() ?: error("Sign in to Swim Log first")
         val granted = client.permissionController.getGrantedPermissions()
         if (granted.intersect(HealthConnectPermissions.reads).isEmpty()) error("No Health Connect read permissions are granted")
         val records = HealthReader(client).readLast30Days(granted)

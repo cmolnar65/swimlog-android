@@ -1,6 +1,8 @@
 package com.cmolnar65.swimlog
 
 import android.os.Bundle
+import android.content.Intent
+import android.net.Uri
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
@@ -16,6 +18,11 @@ import androidx.lifecycle.lifecycleScope
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
+import com.cmolnar65.swimlog.auth.AuthorizationCallback
+import com.cmolnar65.swimlog.auth.AuthorizationNetworkException
+import com.cmolnar65.swimlog.auth.AuthorizationTokenException
+import com.cmolnar65.swimlog.auth.HealthConnectAuthorizationClient
+import com.cmolnar65.swimlog.auth.HealthConnectAuthorizationProtocol
 import com.cmolnar65.swimlog.security.SecretStore
 import com.cmolnar65.swimlog.sync.SyncWorker
 import com.cmolnar65.swimlog.sync.HealthConnectPermissions
@@ -26,9 +33,9 @@ import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     private val secretStore by lazy { SecretStore(this) }
+    private val authorizationClient by lazy { HealthConnectAuthorizationClient() }
     private lateinit var status: TextView
     private lateinit var endpoint: EditText
-    private lateinit var token: EditText
     private var connectAfterRead = false
     private var syncAfterPermission = false
 
@@ -52,21 +59,37 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(32, 32, 32, 24) }
-        status = TextView(this).apply { text = getSharedPreferences("sync_summary", MODE_PRIVATE).getString("last", "Health Connect sends selected records to your private Swim Log account.") }
+        status = TextView(this).apply {
+            text = if (!secretStore.token().isNullOrBlank()) "Swim Log is connected on this device." else "Sign in to connect Health Connect to your private Swim Log account."
+        }
         endpoint = EditText(this).apply { hint = "Swim Log HTTPS site"; setText(secretStore.endpoint() ?: "https://cmolnar.com"); setSingleLine(true) }
-        token = EditText(this).apply { hint = "Owner-scoped app token"; inputType = 129; setSingleLine(true) }
         root.addView(TextView(this).apply { text = "Destination" })
         root.addView(endpoint, matchWidth())
-        root.addView(token, matchWidth())
-        root.addView(button("Save connection") { saveConnection() })
+        root.addView(button("Save site") { saveSite() })
+        root.addView(button("Sign in to Swim Log") { signInToSwimLog() })
+        root.addView(TextView(this).apply { text = "Sign-in opens your browser. The app never asks for your WordPress password. A successful new authorization replaces your previous Health Connect app token." })
         root.addView(button("Connect Health Connect") { requestReadPermissions(andBackground = true) })
         root.addView(button("Sync now") { syncNow() })
         root.addView(button("Enable background sync") { requestBackgroundPermission() })
         root.addView(button("Disable background sync") { WorkManager.getInstance(this).cancelUniqueWork(SyncWorker.UNIQUE_NAME); status.text = "Background sync disabled." })
-        root.addView(button("Forget token and settings") { secretStore.clear(); token.text.clear(); endpoint.setText("https://cmolnar.com"); WorkManager.getInstance(this).cancelUniqueWork(SyncWorker.UNIQUE_NAME); status.text = "Saved connection removed. Health Connect permissions can be revoked in Health Connect." })
+        root.addView(button("Forget saved connection") {
+            secretStore.clear()
+            endpoint.setText("https://cmolnar.com")
+            WorkManager.getInstance(this).cancelUniqueWork(SyncWorker.UNIQUE_NAME)
+            status.text = "Saved connection removed from this device. Revoke the app token in Swim Log settings if you also want to invalidate it on the server."
+        })
         root.addView(status, matchWidth())
         root.addView(TextView(this).apply { text = "Read-only: swimming/running/walking sessions, matched distance and workout heart rate, weight, body fat, lean mass, and blood pressure. Records stay on this device only while being sent over HTTPS. No cycling, GPS routes, Health Connect writes, or records older than 30 days." })
         setContentView(root)
+        handleAuthorizationRedirect(intent?.dataString)
+        intent?.let { setIntent(Intent(it).apply { data = null }) }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleAuthorizationRedirect(intent.dataString)
+        setIntent(Intent(intent).apply { data = null })
     }
 
     private fun requestReadPermissions(andBackground: Boolean) {
@@ -102,17 +125,78 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun saveConnection() {
+    private fun saveSite() {
         try {
-            secretStore.save(endpoint.text.toString().trim(), token.text.toString())
-            token.text.clear()
-            status.text = "Connection saved securely on this device."
-        } catch (error: IllegalArgumentException) { status.text = error.message ?: "Check the HTTPS site and token." }
+            secretStore.saveEndpoint(endpoint.text.toString().trim())
+            status.text = "Swim Log site saved. Sign in to authorize this device."
+        } catch (error: IllegalArgumentException) { status.text = error.message ?: "Check the HTTPS site." }
+    }
+
+    private fun signInToSwimLog() {
+        try {
+            secretStore.saveEndpoint(endpoint.text.toString().trim())
+            val request = HealthConnectAuthorizationProtocol.createRequest(secretStore.endpoint() ?: error("Save the Swim Log site first."))
+            secretStore.saveAuthorizationAttempt(request.pending.state, request.pending.verifier)
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(request.url)))
+            status.text = "Sign in to WordPress in your browser and authorize Swim Log Android."
+        } catch (error: IllegalArgumentException) {
+            secretStore.clearAuthorizationAttempt()
+            status.text = error.message ?: "Check the HTTPS site and try again."
+        } catch (_: Exception) {
+            secretStore.clearAuthorizationAttempt()
+            status.text = "Could not open the browser. Try signing in again."
+        }
+    }
+
+    private fun handleAuthorizationRedirect(rawUri: String?) {
+        if (rawUri.isNullOrBlank()) return
+        val pending = secretStore.authorizationAttempt()
+        if (pending == null) {
+            status.text = "No active Swim Log sign-in was found. Start sign-in again."
+            return
+        }
+        when (val callback = HealthConnectAuthorizationProtocol.parseCallback(rawUri, pending.first)) {
+            is AuthorizationCallback.Invalid -> {
+                secretStore.clearAuthorizationAttempt()
+                status.text = "The sign-in response could not be verified. Start sign-in again."
+            }
+            is AuthorizationCallback.Cancelled -> {
+                secretStore.clearAuthorizationAttempt()
+                status.text = "Swim Log sign-in was cancelled."
+            }
+            is AuthorizationCallback.Code -> {
+                val verifier = pending.second
+                val site = secretStore.endpoint()
+                secretStore.clearAuthorizationAttempt()
+                if (site.isNullOrBlank()) {
+                    status.text = "The saved Swim Log site is missing. Start sign-in again."
+                    return
+                }
+                lifecycleScope.launch {
+                    status.text = "Completing secure Swim Log sign-in…"
+                    try {
+                        val accessToken = authorizationClient.exchange(site, callback.value, verifier)
+                        secretStore.saveToken(accessToken)
+                        status.text = "Swim Log is connected on this device. You can sync selected Health Connect records."
+                    } catch (failure: AuthorizationTokenException) {
+                        status.text = if (failure.httpStatus == 401) {
+                            "Swim Log could not verify this sign-in. Start sign-in again."
+                        } else {
+                            "Swim Log sign-in could not be completed. Check the installed site version and try again."
+                        }
+                    } catch (_: AuthorizationNetworkException) {
+                        status.text = "Could not reach Swim Log securely. Check the network and sign in again."
+                    } catch (_: Exception) {
+                        status.text = "Swim Log sign-in could not be completed. Start sign-in again."
+                    }
+                }
+            }
+        }
     }
 
     private fun syncNow() {
         if (secretStore.token().isNullOrBlank() || secretStore.endpoint().isNullOrBlank()) {
-            status.text = "Save your Swim Log site and owner-scoped token first."; return
+            status.text = "Sign in to Swim Log before syncing."; return
         }
         lifecycleScope.launch {
             val sdk = HealthConnectClient.getSdkStatus(this@MainActivity, PROVIDER_PACKAGE)

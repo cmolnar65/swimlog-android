@@ -15,7 +15,9 @@ The script builds the debug variant signed with the local Android debug key and 
 
 ## Test connection
 
-Open the app, enter the Swim Log site using HTTPS and the dedicated owner-scoped app token, save, and connect Health Connect. The token is encrypted with an Android Keystore AES-GCM key; app backups are disabled. Do not paste the token into issue reports, screenshots, or logs. The app never logs request bodies or health values.
+Open the app and select **Sign in to Swim Log**. The app opens the HTTPS WordPress site in your browser; sign in there and authorize **Swim Log Android**. The app never asks for your WordPress password and does not require copying a token. It checks the returned OAuth state, exchanges the five-minute one-time PKCE code over HTTPS, and stores the owner-scoped token encrypted with an Android Keystore AES-GCM key. App backups are disabled. The short-lived PKCE verifier is encrypted on-device until the browser returns. Do not share sign-in screenshots or logs. The app never logs authorization codes, tokens, request bodies, or health values.
+
+The app uses the fixed Swim Log client `swimlog_android` and callback `com.cmolnar65.swimlog:/oauth2redirect`. A successful new authorization replaces the previous single Health Connect app token for that Swim Log account. Canceling or failing authorization leaves the current saved token in place. **Forget saved connection** removes it from this device; revoke the server token separately in Swim Log settings if you also want to invalidate it.
 
 The app asks for read access only to supported exercise sessions, distance, heart-rate samples, weight, body fat, lean body mass, and blood pressure. To sync periodically, also enable Health Connect background read access. Android may defer scheduled work. Without it, use **Sync now** while the app is open. Sync reads a rolling 30-day window, leaving the server's source-ID idempotency to protect against repeats. No Health Connect history or route permission is requested.
 

@@ -23,7 +23,7 @@ The receiver is implemented on the Swim Log WordPress `develop` branch:
 
 `POST /wp-json/swimlog/v1/health-connect/import-batch`
 
-Use HTTPS and the dedicated owner-scoped bearer token generated under **Swim Training → Swimmer Configuration → Health Connect App Sync**. The token is shown once, can be revoked/replaced, and is separate from WordPress Application Passwords. Never put it in logs, screenshots, analytics, or source control. The server derives the owner from the token; never send an owner ID.
+The Android app obtains its owner-scoped bearer token through browser authorization; it never collects a WordPress password. It creates a random PKCE verifier and state, opens `https://cmolnar.com/wp-admin/admin.php?page=swimlog-health-connect-authorize` with client `swimlog_android`, the fixed callback `com.cmolnar65.swimlog:/oauth2redirect`, and an S256 challenge, then verifies the returned state. It exchanges the short-lived one-time code at `POST https://cmolnar.com/wp-json/swimlog/v1/health-connect/token` over HTTPS. The code expires after five minutes and the server consumes it once. The response token is stored encrypted with Android Keystore and sent only over HTTPS to the import endpoint. Never log, screenshot, or commit authorization codes, verifiers, tokens, or health values. The server derives the owner from the WordPress browser session during authorization and from the bearer token during import; the app never sends an owner ID.
 
 A v1 JSON request contains `contract_version: 1`, a safe opaque `batch_id`, and `workouts[]` and/or `measurements[]`. Limits are 512 KiB per request, 50 workouts, 500 measurements, and 2,000 heart-rate samples per workout. Split larger batches without dropping records.
 
@@ -68,7 +68,7 @@ HTTP 200 returns an outcome for each record. Current outcomes include `added`, `
 
 ## Implementation prerequisites and validation status
 
-The WordPress receiver and owner-scoped token handling exist on plugin `develop`. The Android test client now handles Health Connect availability, permission checks, best-effort background scheduling, bounded requests, HTTPS token transport, and receiver duplicate/conflict outcomes. The client has not yet passed a real-device Health Connect test against the installed Swim Log receiver.
+The WordPress receiver, browser consent page, and PKCE code exchange exist on plugin `develop`. The Android test client handles browser sign-in, callback state verification, encrypted PKCE state, HTTPS code exchange, Health Connect availability and permission checks, best-effort background scheduling, bounded requests, and receiver duplicate/conflict outcomes. The client has not yet passed a real-device authorization and Health Connect sync test against the installed Swim Log receiver.
 
 The `swimlog-android` repository now contains a minimal native Android client, unit tests, a Gradle wrapper, an APK build script, and an Actions workflow that builds a debug APK artifact. The test APK is for manual installation and is not a Play Store or production release. Unit tests do not replace real-device Health Connect validation. End-to-end validation must use a safe test account with synthetic or non-sensitive records.
 
@@ -81,4 +81,4 @@ Official Android references:
 
 The initial client reads a rolling 30-day window. It requests only read permissions for exercise sessions, distance, heart rate, weight, body fat, lean body mass, and blood pressure; background access is requested separately and only when Health Connect reports the feature available. The user can sync in the foreground without background access. WorkManager runs periodic sync on a best-effort six-hour interval when background permission and network are available.
 
-The debug APK is built with `./scripts/build-test-apk.sh`. That script invokes the checked-in Gradle wrapper, then copies the debug APK to the ignored `dist/` directory. GitHub Actions uploads the same test APK for seven days. Neither build path includes an app token or health records. The client stores only the owner-scoped token encrypted with Android Keystore, does not back up app data, and sends the token only to `https://cmolnar.com` over HTTPS.
+The debug APK is built with `./scripts/build-test-apk.sh`. That script invokes the checked-in Gradle wrapper, then copies the debug APK to the ignored `dist/` directory. GitHub Actions uploads the same test APK for seven days. Neither build path includes an app token or health records. The client stores the owner-scoped token and any active PKCE verifier encrypted with Android Keystore, does not back up app data, and sends codes and tokens only to `https://cmolnar.com` over HTTPS.

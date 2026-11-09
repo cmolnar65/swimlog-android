@@ -37,9 +37,10 @@ class HealthPrivacyActivity : Activity() {
         internal const val HEALTH_DATA_DISCLOSURE =
             "This test app reads only the Health Connect data types you allow: exercise sessions, " +
                 "distance, workout heart rate, weight, body fat, lean body mass, and blood pressure. " +
-                "It sends selected records to the HTTPS Swim Log site and account you configured. " +
-                "The owner-scoped app token is stored encrypted on this device and is not included " +
-                "in backups or logs. Health values are not written to app logs. The app does not " +
+                "It sends selected records to the HTTPS Swim Log account you authorize in your browser. " +
+                "The owner-scoped app token and short-lived sign-in proof are stored encrypted on this " +
+                "device and are not included in backups or logs. The app never collects your WordPress " +
+                "password. Health values are not written to app logs. The app does not " +
                 "write to Health Connect, read GPS routes, or sync records older than 30 days. " +
                 "Swim Log stores imported measurements privately for the account that owns the token."
     }

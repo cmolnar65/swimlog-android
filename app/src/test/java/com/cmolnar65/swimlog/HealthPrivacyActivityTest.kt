@@ -15,5 +15,6 @@ class HealthPrivacyActivityTest {
         assertTrue(disclosure.contains("does not write to Health Connect"))
         assertTrue(disclosure.contains("older than 30 days"))
         assertTrue(disclosure.contains("privately for the account"))
+        assertTrue(disclosure.contains("never collects your WordPress password"))
     }
 }

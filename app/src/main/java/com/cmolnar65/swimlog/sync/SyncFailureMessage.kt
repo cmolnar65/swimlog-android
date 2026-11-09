@@ -6,7 +6,7 @@ import kotlinx.serialization.SerializationException
 internal object SyncFailureMessage {
     fun from(failure: Throwable): String = when (failure) {
         is PermanentImportException -> when (failure.httpStatus) {
-            401 -> "Swim Log rejected the saved app token (HTTP 401). Check whether it is still active."
+            401 -> "Swim Log rejected this device's authorization (HTTP 401). Sign in again."
             403 -> "Swim Log refused the request (HTTP 403). Check the HTTPS site and account authorization."
             404 -> "The Health Connect import endpoint was not found (HTTP 404). Check the installed Swim Log version."
             413 -> "Swim Log rejected a request that exceeded its import limits (HTTP 413)."
